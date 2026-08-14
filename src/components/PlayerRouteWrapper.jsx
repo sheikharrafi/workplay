@@ -11,11 +11,10 @@ export default function PlayerRouteWrapper({ videos, discoverVideos = [], handle
   let activeVideo = videos.find(v => String(v.id) === String(activeVideoId));
   if (!activeVideo) activeVideo = activeDiscover.find(v => String(v.id) === String(activeVideoId));
 
-  // A freshly resolved video is passed by useFetch through router state.
-  // This handles the React state-update race where navigation happens before
-  // the new video has propagated into the `videos` prop.
-  if (!activeVideo && location.state?.resolvedVideo && String(location.state.resolvedVideo.id) === String(activeVideoId)) {
-    activeVideo = location.state.resolvedVideo;
+  // Freshly resolved video or a video opened directly from History.
+  const routedVideo = location.state?.resolvedVideo;
+  if (!activeVideo && routedVideo && String(routedVideo.id) === String(activeVideoId)) {
+    activeVideo = routedVideo;
   }
 
   if (!activeVideo) {
