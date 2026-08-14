@@ -10,7 +10,6 @@ import { categorizeVideo } from '../utils/categorizeVideo';
 
 async function getTeraBridgeToken(forceRefresh = false) {
   let user = terabridgeAuth.currentUser;
-
   if (!user) {
     user = await new Promise((resolve, reject) => {
       let unsubscribe;
@@ -18,7 +17,6 @@ async function getTeraBridgeToken(forceRefresh = false) {
         unsubscribe?.();
         reject(new Error('TeraBridge authentication timed out.'));
       }, 10000);
-
       unsubscribe = onAuthStateChanged(terabridgeAuth, async (currentUser) => {
         if (currentUser) {
           clearTimeout(timeout);
@@ -39,7 +37,6 @@ async function getTeraBridgeToken(forceRefresh = false) {
       });
     });
   }
-
   return user.getIdToken(forceRefresh);
 }
 
@@ -48,14 +45,12 @@ export function useFetch(currentUser, navigate, { videosRef, historyRef, userPro
   const [fetchError, setFetchError] = useState(null);
   const [fetchStep, setFetchStep] = useState('');
   const resolveAbortRef = useRef(null);
-
   const { apiBase } = useAuth();
 
   const handleFetch = useCallback(async (url) => {
     if (resolveAbortRef.current) resolveAbortRef.current.abort();
     const controller = new AbortController();
     resolveAbortRef.current = controller;
-
     setIsFetching(true);
     setFetchError(null);
     setFetchStep('Connecting to TeraBridge...');
@@ -72,7 +67,6 @@ export function useFetch(currentUser, navigate, { videosRef, historyRef, userPro
     try {
       let response = await doResolve(false);
       if (response.status === 401) response = await doResolve(true);
-
       if (response.status === 429) {
         const retryAfter = response.headers.get('Retry-After');
         const wait = retryAfter ? ` Try again in ${retryAfter}s.` : ' Please try again shortly.';
@@ -103,30 +97,25 @@ export function useFetch(currentUser, navigate, { videosRef, historyRef, userPro
         let sizeStr = 'Unknown Size';
         if (file.size_mb) sizeStr = `${file.size_mb.toFixed(1)} MB`;
         else if (file.size_bytes) sizeStr = `${(file.size_bytes / (1024 * 1024)).toFixed(1)} MB`;
-
         const thumbUrl = file.thumbnails?.url2 || file.thumbnails?.url1 || file.thumbnails?.icon || 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&q=80&w=600';
-        const streamUrl = file.stream_url || null;
-        const detectedRes = detectResolution(file.filename, file.streams);
-        const autoCategory = categorizeVideo(file.filename);
-
         return {
           id: fileId,
-          title: file.filename || `TeraBox Video #${fileId.substring(0, 6)}`,
+          title: file.filename || `TeraBox Video #${String(fileId).substring(0, 6)}`,
           description: `Imported from TeraBox URL. High-speed HLS stream proxied via TeraBridge. Original Path: ${file.path || '/'}`,
           size: sizeStr,
           duration: typeof file.duration === 'number' ? formatDuration(file.duration) : (typeof file.duration === 'string' && file.duration.trim() ? file.duration : '02:00'),
           progress: 0,
           favorite: false,
-          videoUrl: streamUrl,
+          videoUrl: file.stream_url || null,
           downloadUrl: file.dlink,
           thumbnail: thumbUrl,
           relativeTime: 'Just now',
           addedDate: new Date().toISOString(),
-          resolution: detectedRes,
+          resolution: detectResolution(file.filename, file.streams),
           streamReady: true,
           originalUrl: url,
           fileIndex: idx,
-          category: autoCategory,
+          category: categorizeVideo(file.filename),
           views: 0,
           plays: 0
         };
@@ -140,24 +129,27 @@ export function useFetch(currentUser, navigate, { videosRef, historyRef, userPro
       const historyRecords = newVideos.map(nv => ({ id: `h_${Date.now()}_${nv.id}`, videoId: nv.id, title: nv.title, size: nv.size, duration: nv.duration, thumbnail: nv.thumbnail, progress: 0, watchedAt: new Date().toISOString() }));
       const updatedHistory = [...historyRecords, ...currentHistory].slice(0, 50);
 
-      if (currentUser) {
-        setVideosInDb(updatedVideos);
-        setHistoryInDb(updatedHistory);
-        if (shareToDiscover) {
-          newVideos.forEach(nv => {
-            const uploaderObj = { uid: currentUser.uid, username: userProfile?.username || currentUser.displayName || `User_${currentUser.uid.substring(0, 5)}`, avatar: userProfile?.avatar || currentUser.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=150' };
-            const publicVideo = { ...nv, uploader: uploaderObj };
-            delete publicVideo.progress;
-            delete publicVideo.favorite;
-            set(ref(db, `discoverVideos/${nv.id}`), publicVideo).catch(err => console.error('Failed to post public video:', err));
-          });
-        }
-      } else {
-        setVideosInDb(updatedVideos);
-        setHistoryInDb(updatedHistory);
+      setVideosInDb(updatedVideos);
+      setHistoryInDb(updatedHistory);
+
+      if (currentUser && shareToDiscover) {
+        newVideos.forEach(nv => {
+          const uploaderObj = {
+            uid: currentUser.uid,
+            username: userProfile?.username || currentUser.displayName || `User_${currentUser.uid.substring(0, 5)}`,
+            avatar: userProfile?.avatar || currentUser.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=150'
+          };
+          const publicVideo = { ...nv, uploader: uploaderObj };
+          delete publicVideo.progress;
+          delete publicVideo.favorite;
+          set(ref(db, `discoverVideos/${nv.id}`), publicVideo).catch(err => console.error('Failed to post public video:', err));
+        });
       }
 
-      navigate(`/player/${newVideos[0].id}`);
+      // State updates are asynchronous, so pass the freshly resolved object
+      // through router state. This prevents the Player route from rendering
+      // "No video selected" before videos[] receives the new item.
+      navigate(`/player/${newVideos[0].id}`, { state: { resolvedVideo: newVideos[0] } });
     } catch (err) {
       if (err.name === 'AbortError') return;
       console.error('API Resolve Error:', err);
