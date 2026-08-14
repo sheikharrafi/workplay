@@ -3,14 +3,14 @@ import { getAuth } from 'firebase/auth';
 import { getDatabase } from 'firebase/database';
 
 const firebaseConfig = {
-  apiKey: 'AIzaSyBo6KSvm_YjKLJxGfJoako9ODOJzignH9c',
-  authDomain: 'teraplay-project.firebaseapp.com',
-  projectId: 'teraplay-project',
-  storageBucket: 'teraplay-project.firebasestorage.app',
-  messagingSenderId: '22091622747',
-  appId: '1:22091622747:web:46162860008e45682dd27e',
-  measurementId: 'G-7N992LNXYD',
-  databaseURL: 'https://teraplay-project-default-rtdb.asia-southeast1.firebasedatabase.app'
+  apiKey: 'AIzaSyAypjMBuYZFfOCnSAsQQc0PHfDKTIvNLJU',
+  authDomain: 'tbplay-73b2a.firebaseapp.com',
+  projectId: 'tbplay-73b2a',
+  storageBucket: 'tbplay-73b2a.firebasestorage.app',
+  messagingSenderId: '617974461346',
+  appId: '1:617974461346:web:24f0826ee77b51fccab8fb',
+  measurementId: 'G-P7JQCQ73DL',
+  databaseURL: 'https://tbplay-73b2a-default-rtdb.asia-southeast1.firebasedatabase.app'
 };
 
 const app = initializeApp(firebaseConfig);
