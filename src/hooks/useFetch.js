@@ -97,7 +97,11 @@ export function useFetch(currentUser, navigate, { videosRef, historyRef, userPro
         let sizeStr = 'Unknown Size';
         if (file.size_mb) sizeStr = `${file.size_mb.toFixed(1)} MB`;
         else if (file.size_bytes) sizeStr = `${(file.size_bytes / (1024 * 1024)).toFixed(1)} MB`;
-        const thumbUrl = file.thumbnails?.url2 || file.thumbnails?.url1 || file.thumbnails?.icon || 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&q=80&w=600';
+
+        const fallbackThumb = 'https://i.ibb.co/wbdZsJ5/x.jpg';
+        const thumbUrl = file.thumbnails?.url2 || file.thumbnails?.url1 || file.thumbnails?.icon || fallbackThumb;
+        const resolvedStreamUrl = file.stream_url || null;
+
         return {
           id: fileId,
           title: file.filename || `TeraBox Video #${String(fileId).substring(0, 6)}`,
@@ -106,9 +110,10 @@ export function useFetch(currentUser, navigate, { videosRef, historyRef, userPro
           duration: typeof file.duration === 'number' ? formatDuration(file.duration) : (typeof file.duration === 'string' && file.duration.trim() ? file.duration : '02:00'),
           progress: 0,
           favorite: false,
-          videoUrl: file.stream_url || null,
+          videoUrl: resolvedStreamUrl,
           downloadUrl: file.dlink,
           thumbnail: thumbUrl,
+          thumbnailUrl: thumbUrl,
           relativeTime: 'Just now',
           addedDate: new Date().toISOString(),
           resolution: detectResolution(file.filename, file.streams),
@@ -126,8 +131,26 @@ export function useFetch(currentUser, navigate, { videosRef, historyRef, userPro
       const existingIds = new Set(currentVideos.map(v => String(v.id)));
       const filteredNew = newVideos.filter(nv => !existingIds.has(String(nv.id)));
       const updatedVideos = [...filteredNew, ...currentVideos];
-      const historyRecords = newVideos.map(nv => ({ id: `h_${Date.now()}_${nv.id}`, videoId: nv.id, title: nv.title, size: nv.size, duration: nv.duration, thumbnail: nv.thumbnail, progress: 0, watchedAt: new Date().toISOString() }));
-      const updatedHistory = [...historyRecords, ...currentHistory].slice(0, 50);
+      const now = new Date().toISOString();
+      const historyRecords = newVideos.map(nv => ({
+        id: `h_${Date.now()}_${nv.id}`,
+        videoId: nv.id,
+        title: nv.title,
+        size: nv.size,
+        duration: nv.duration,
+        thumbnail: nv.thumbnail,
+        thumbnailUrl: nv.thumbnailUrl,
+        videoUrl: nv.videoUrl,
+        downloadUrl: nv.downloadUrl,
+        originalUrl: nv.originalUrl,
+        resolution: nv.resolution,
+        progress: 0,
+        watchedAt: now
+      }));
+      const updatedHistory = [
+        ...historyRecords,
+        ...currentHistory.filter(h => !newVideos.some(v => String(v.id) === String(h.videoId)))
+      ].slice(0, 50);
 
       setVideosInDb(updatedVideos);
       setHistoryInDb(updatedHistory);
@@ -137,18 +160,15 @@ export function useFetch(currentUser, navigate, { videosRef, historyRef, userPro
           const uploaderObj = {
             uid: currentUser.uid,
             username: userProfile?.username || currentUser.displayName || `User_${currentUser.uid.substring(0, 5)}`,
-            avatar: userProfile?.avatar || currentUser.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=150'
+            avatar: userProfile?.avatar || currentUser.photoURL || fallbackThumb
           };
           const publicVideo = { ...nv, uploader: uploaderObj };
           delete publicVideo.progress;
           delete publicVideo.favorite;
-          set(ref(db, `discoverVideos/${nv.id}`), publicVideo).catch(err => console.error('Failed to post public video:', err));
+          set(ref(db, `discoverVideos/${nv.id}`), publicVideo).catch(() => {});
         });
       }
 
-      // State updates are asynchronous, so pass the freshly resolved object
-      // through router state. This prevents the Player route from rendering
-      // "No video selected" before videos[] receives the new item.
       navigate(`/player/${newVideos[0].id}`, { state: { resolvedVideo: newVideos[0] } });
     } catch (err) {
       if (err.name === 'AbortError') return;
