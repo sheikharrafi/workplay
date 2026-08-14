@@ -1,27 +1,28 @@
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import PlayerView from './PlayerView';
 
 export default function PlayerRouteWrapper({ videos, discoverVideos = [], handleToggleFavorite, handleVideoSelect, handleUpdateVideo, handleIncrementVideoViewsAndPlays, currentUser, onDeleteVideo, onShareVideo, settings }) {
   const { id } = useParams();
   const navigate = useNavigate();
-
+  const location = useLocation();
   const activeDiscover = discoverVideos || [];
-
   const activeVideoId = id || (videos.length > 0 ? videos[0].id : (activeDiscover.length > 0 ? activeDiscover[0].id : null));
 
   let activeVideo = videos.find(v => String(v.id) === String(activeVideoId));
-  if (!activeVideo) {
-    activeVideo = activeDiscover.find(v => String(v.id) === String(activeVideoId));
+  if (!activeVideo) activeVideo = activeDiscover.find(v => String(v.id) === String(activeVideoId));
+
+  // A freshly resolved video is passed by useFetch through router state.
+  // This handles the React state-update race where navigation happens before
+  // the new video has propagated into the `videos` prop.
+  if (!activeVideo && location.state?.resolvedVideo && String(location.state.resolvedVideo.id) === String(activeVideoId)) {
+    activeVideo = location.state.resolvedVideo;
   }
 
   if (!activeVideo) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center text-muted gap-4">
         <p>No video selected.</p>
-        <button
-          className="px-5 py-2 bg-accent text-bg rounded-xl font-semibold hover:opacity-90 cursor-pointer"
-          onClick={() => navigate('/')}
-        >
+        <button className="px-5 py-2 bg-accent text-bg rounded-xl font-semibold hover:opacity-90 cursor-pointer" onClick={() => navigate('/')}>
           Go back Home
         </button>
       </div>
