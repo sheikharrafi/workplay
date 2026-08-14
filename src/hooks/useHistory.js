@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { db } from '../firebase';
 import { ref, onValue, set } from 'firebase/database';
 
@@ -19,23 +19,11 @@ export function useHistory(currentUser) {
     const dbHistoryRef = ref(db, `users/${currentUser.uid}/history`);
     const unsubscribe = onValue(dbHistoryRef, (snapshot) => {
       const data = snapshot.val();
-      if (data) {
+      if (Array.isArray(data)) {
         setHistory(data);
+      } else if (data && typeof data === 'object') {
+        setHistory(Object.values(data));
       } else {
-        const local = localStorage.getItem('teraplay_history');
-        if (local) {
-          try {
-            const parsed = JSON.parse(local);
-            if (parsed && parsed.length > 0) {
-              set(dbHistoryRef, parsed);
-              setHistory(parsed);
-              localStorage.removeItem('teraplay_history');
-              return;
-            }
-          } catch (e) {
-            console.error('Failed to parse local history: ', e);
-          }
-        }
         setHistory([]);
       }
     });
@@ -43,31 +31,28 @@ export function useHistory(currentUser) {
     return () => unsubscribe();
   }, [currentUser]);
 
-  const setHistoryInDb = (updated) => {
-    if (currentUser) {
-      set(ref(db, `users/${currentUser.uid}/history`), updated);
-    } else {
-      setHistory(updated || []);
-    }
-  };
+  const setHistoryInDb = useCallback((updated) => {
+    const safeHistory = Array.isArray(updated) ? updated : [];
+    setHistory(safeHistory);
 
-  const handleRemoveHistoryItem = (id) => {
-    const currentHistory = historyRef.current;
-    const updated = currentHistory.filter(h => String(h.id) !== String(id));
     if (currentUser) {
-      set(ref(db, `users/${currentUser.uid}/history`), updated.length > 0 ? updated : null);
-    } else {
-      setHistory(updated);
+      return set(ref(db, `users/${currentUser.uid}/history`), safeHistory);
     }
-  };
 
-  const clearAllHistory = () => {
-    if (currentUser) {
-      set(ref(db, `users/${currentUser.uid}/history`), null);
-    } else {
-      setHistory([]);
-    }
-  };
+    try {
+      localStorage.setItem('teraplay_history', JSON.stringify(safeHistory));
+    } catch {}
+    return Promise.resolve();
+  }, [currentUser]);
+
+  const handleRemoveHistoryItem = useCallback((id) => {
+    const updated = historyRef.current.filter(h => String(h.id) !== String(id));
+    return setHistoryInDb(updated);
+  }, [setHistoryInDb]);
+
+  const clearAllHistory = useCallback(() => {
+    return setHistoryInDb([]);
+  }, [setHistoryInDb]);
 
   return { history, historyRef, setHistoryInDb, handleRemoveHistoryItem, clearAllHistory };
 }
