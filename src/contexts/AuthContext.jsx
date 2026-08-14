@@ -2,7 +2,7 @@ import React, { useState, useEffect, useContext, createContext } from 'react';
 import { auth } from '../firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 
-const AUTHORIZED_API_BASE = 'https://terabridge.vercel.app';
+const AUTHORIZED_API_BASE = 'https://api.tera-peek.in';
 
 const AuthContext = createContext(null);
 
