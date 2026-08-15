@@ -10,7 +10,7 @@
     "discoverVideos": {
       ".read": "auth != null",
       "$videoId": {
-        ".write": "auth != null && (auth.token.admin === true || (!data.exists() && newData.child('uploader/uid').val() == auth.uid) || (data.exists() && data.child('uploader/uid').val() == auth.uid) || (data.exists() && newData.hasChildren(['views','plays']) && newData.child('views').val() == data.child('views').val() + 1 && newData.child('plays').val() == data.child('plays').val() + 1 && newData.hasChildren(data.getChildren().map(child => child.key)))"
+        ".write": "auth != null && (auth.token.admin === true || (!data.exists() && newData.child('uploader/uid').val() == auth.uid) || (data.exists() && data.child('uploader/uid').val() == auth.uid) || (data.exists() && newData.child('views').val() == data.child('views').val() + 1 && newData.child('plays').val() == data.child('plays').val() + 1))"
       }
     },
 
