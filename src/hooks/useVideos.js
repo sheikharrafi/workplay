@@ -42,7 +42,7 @@ export function useVideos(currentUser) {
     setVideosInDb([{ ...video, favorite: video.favorite || false, progress: 0, addedDate: new Date().toISOString(), relativeTime: 'Just now' }, ...currentVideos]);
   }, [setVideosInDb]);
 
-  const handleToggleFavorite = (videoId, discoverVideosRef) => {
+  const handleToggleFavorite = useCallback((videoId, discoverVideosRef) => {
     const currentVideos = videosRef.current;
     const id = String(videoId);
     if (!currentVideos.some(v => String(v.id) === id)) {
@@ -50,9 +50,9 @@ export function useVideos(currentUser) {
       if (discVid) { handleImportVideo({ ...discVid, favorite: true }); return; }
     }
     setVideosInDb(currentVideos.map(v => String(v.id) === id ? { ...v, favorite: !v.favorite } : v));
-  };
+  }, [handleImportVideo, setVideosInDb]);
 
-  const handleUpdateVideo = (updatedVideo) => {
+  const handleUpdateVideo = useCallback((updatedVideo) => {
     if (deletingVideoIdRef.current && String(updatedVideo.id) === String(deletingVideoIdRef.current)) return;
     const safe = { ...updatedVideo, progress: Number.isFinite(updatedVideo.progress) ? updatedVideo.progress : 0 };
     setVideosInDb(videosRef.current.map(v => String(v.id) === String(safe.id) ? { ...v, ...safe } : v));
@@ -85,12 +85,12 @@ export function useVideos(currentUser) {
       if (updatedVideo.category && updatedVideo.category !== dbVid.category) updateData.category = updatedVideo.category;
       if (Object.keys(updateData).length) update(publicVideoRef, updateData).catch(() => {});
     }).catch(() => {});
-  };
+  }, [currentUser, setVideosInDb]);
 
-  const handleIncrementVideoViewsAndPlays = (videoId) => {
+  const handleIncrementVideoViewsAndPlays = useCallback((videoId) => {
     if (!currentUser) return;
     update(ref(db, `discoverVideos/${videoId}`), { views: increment(1), plays: increment(1) }).catch(() => {});
-  };
+  }, [currentUser]);
 
   return { videos, videosRef, deletingVideoIdRef, setVideosInDb, handleImportVideo, handleToggleFavorite, handleUpdateVideo, handleIncrementVideoViewsAndPlays };
 }
