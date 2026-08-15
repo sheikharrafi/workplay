@@ -8,6 +8,12 @@ const normalizeVideos = (data) => {
   return [];
 };
 
+const normalizeHistory = (data) => {
+  if (Array.isArray(data)) return data.filter(Boolean);
+  if (data && typeof data === 'object') return Object.values(data).filter(Boolean);
+  return [];
+};
+
 export function useVideos(currentUser) {
   const [videos, setVideos] = useState([]);
   const videosRef = useRef([]);
@@ -51,19 +57,34 @@ export function useVideos(currentUser) {
     const safe = { ...updatedVideo, progress: Number.isFinite(updatedVideo.progress) ? updatedVideo.progress : 0 };
     setVideosInDb(videosRef.current.map(v => String(v.id) === String(safe.id) ? { ...v, ...safe } : v));
 
-    if (currentUser) {
-      const publicVideoRef = ref(db, `discoverVideos/${updatedVideo.id}`);
-      get(publicVideoRef).then(snap => {
-        if (!snap.exists()) return;
-        const dbVid = snap.val() || {};
-        const updateData = {};
-        if (typeof updatedVideo.views === 'number' && updatedVideo.views > (dbVid.views || 0)) updateData.views = updatedVideo.views;
-        if (typeof updatedVideo.plays === 'number' && updatedVideo.plays > (dbVid.plays || 0)) updateData.plays = updatedVideo.plays;
-        if (updatedVideo.duration && updatedVideo.duration !== '02:00' && updatedVideo.duration !== dbVid.duration) updateData.duration = updatedVideo.duration;
-        if (updatedVideo.category && updatedVideo.category !== dbVid.category) updateData.category = updatedVideo.category;
-        if (Object.keys(updateData).length) update(publicVideoRef, updateData).catch(() => {});
+    if (!currentUser) return;
+
+    if (Number.isFinite(updatedVideo.progress)) {
+      const historyRef = ref(db, `users/${currentUser.uid}/history`);
+      get(historyRef).then(snapshot => {
+        const history = normalizeHistory(snapshot.val());
+        let changed = false;
+        const nextHistory = history.map(item => {
+          if (String(item.videoId) !== String(updatedVideo.id) || item.progress === safe.progress) return item;
+          changed = true;
+          return { ...item, progress: safe.progress, watchedAt: new Date().toISOString() };
+        });
+        if (changed) set(historyRef, nextHistory).catch(() => {});
       }).catch(() => {});
     }
+
+    const publicVideoRef = ref(db, `discoverVideos/${updatedVideo.id}`);
+    get(publicVideoRef).then(snap => {
+      if (!snap.exists()) return;
+      const dbVid = snap.val() || {};
+      if (dbVid?.uploader?.uid !== currentUser.uid) return;
+      const updateData = {};
+      if (typeof updatedVideo.views === 'number' && updatedVideo.views > (dbVid.views || 0)) updateData.views = updatedVideo.views;
+      if (typeof updatedVideo.plays === 'number' && updatedVideo.plays > (dbVid.plays || 0)) updateData.plays = updatedVideo.plays;
+      if (updatedVideo.duration && updatedVideo.duration !== '02:00' && updatedVideo.duration !== dbVid.duration) updateData.duration = updatedVideo.duration;
+      if (updatedVideo.category && updatedVideo.category !== dbVid.category) updateData.category = updatedVideo.category;
+      if (Object.keys(updateData).length) update(publicVideoRef, updateData).catch(() => {});
+    }).catch(() => {});
   };
 
   const handleIncrementVideoViewsAndPlays = (videoId) => {
