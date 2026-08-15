@@ -36,7 +36,7 @@ export default function PlayerView({ video, relatedVideos = [], onVideoSelect, o
   const manualQualityRef = useRef(-1);
   const controlsTimeoutRef = useRef(null);
   const bufferTimeoutRef = useRef(null);
-  const actionTimeoutRef = useRef(null);
+  const clickTimeoutRef = useRef(null);
   const skipTimeoutRef = useRef(null);
   const lastSavedTimeRef = useRef(0);
   const playTrackedRef = useRef(false);
@@ -54,8 +54,6 @@ export default function PlayerView({ video, relatedVideos = [], onVideoSelect, o
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showControls, setShowControls] = useState(true);
   const [showVolumeSlider, setShowVolumeSlider] = useState(false);
-  const [skipFeedback, setSkipFeedback] = useState(null);
-  const [clickAction, setClickAction] = useState(null);
   const [isBuffering, setIsBuffering] = useState(false);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [bufferingResolution, setBufferingResolution] = useState('');
@@ -97,9 +95,7 @@ export default function PlayerView({ video, relatedVideos = [], onVideoSelect, o
 
   const hideControlsAfterAction = useCallback((delay = 700) => {
     if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
-    if (isPlaying && !isBuffering) {
-      controlsTimeoutRef.current = window.setTimeout(() => setShowControls(false), delay);
-    }
+    if (isPlaying && !isBuffering) controlsTimeoutRef.current = window.setTimeout(() => setShowControls(false), delay);
   }, [isPlaying, isBuffering]);
 
   const playVideo = useCallback(async () => {
@@ -113,15 +109,22 @@ export default function PlayerView({ video, relatedVideos = [], onVideoSelect, o
     const element = videoRef.current;
     if (!element) return;
     if (element.paused) {
-      const started = await playVideo();
-      setClickAction(started ? 'play' : null);
+      await playVideo();
     } else {
-      element.pause(); setIsPlaying(false); setClickAction('pause'); saveProgress(element.currentTime, element.duration);
+      element.pause();
+      setIsPlaying(false);
+      saveProgress(element.currentTime, element.duration);
     }
-    if (actionTimeoutRef.current) clearTimeout(actionTimeoutRef.current);
-    actionTimeoutRef.current = window.setTimeout(() => setClickAction(null), 450);
     hideControlsAfterAction(700);
   }, [hideControlsAfterAction, playVideo, saveProgress]);
+
+  const handleVideoClick = useCallback(() => {
+    if (clickTimeoutRef.current) clearTimeout(clickTimeoutRef.current);
+    clickTimeoutRef.current = window.setTimeout(() => {
+      clickTimeoutRef.current = null;
+      handlePlayPause();
+    }, 250);
+  }, [handlePlayPause]);
 
   const retryStream = useCallback(() => { setVideoError(null); setIsBuffering(false); setIsInitialLoading(true); setShowQualityMenu(false); setStreamNonce(value => value + 1); }, []);
 
@@ -180,13 +183,13 @@ export default function PlayerView({ video, relatedVideos = [], onVideoSelect, o
   useEffect(() => { setCurrentResolution(video.resolution || 'Auto'); setShowQualityMenu(false); setIsBuffering(false); setIsInitialLoading(true); setActiveResolution(''); setVideoError(null); playTrackedRef.current = false; }, [video.id, video.resolution]);
   useEffect(() => { if (isPlaying && !playTrackedRef.current) { playTrackedRef.current = true; onIncrementViewsAndPlays?.(video.id); } }, [isPlaying, onIncrementViewsAndPlays, video.id]);
   useEffect(() => { const onFs = () => setIsFullscreen(Boolean(document.fullscreenElement)); document.addEventListener('fullscreenchange', onFs); return () => document.removeEventListener('fullscreenchange', onFs); }, []);
-  useEffect(() => { resetControlsTimer(); return () => { if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current); if (actionTimeoutRef.current) clearTimeout(actionTimeoutRef.current); if (skipTimeoutRef.current) clearTimeout(skipTimeoutRef.current); }; }, [isBuffering, isPlaying, resetControlsTimer]);
+  useEffect(() => { resetControlsTimer(); return () => { if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current); if (clickTimeoutRef.current) clearTimeout(clickTimeoutRef.current); if (skipTimeoutRef.current) clearTimeout(skipTimeoutRef.current); }; }, [isBuffering, isPlaying, resetControlsTimer]);
 
   const formatTime = seconds => { if (!Number.isFinite(seconds)) return '0:00'; const hours = Math.floor(seconds / 3600); const minutes = Math.floor((seconds % 3600) / 60); const secs = Math.floor(seconds % 60); return hours ? `${hours}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}` : `${minutes}:${String(secs).padStart(2, '0')}`; };
   const handleTimeUpdate = () => { const element = videoRef.current; if (!element) return; setCurrentTime(element.currentTime); if (Math.abs(element.currentTime - lastSavedTimeRef.current) >= 5) { lastSavedTimeRef.current = element.currentTime; saveProgress(element.currentTime, element.duration); } };
   const handleLoadedMetadata = async () => { const element = videoRef.current; if (!element) return; element.volume = isMuted ? 0 : volume; element.muted = isMuted; element.playbackRate = playbackRate; if (Number.isFinite(element.duration)) setDuration(element.duration); if (settings.rememberProgress) { let savedTime = 0; if (currentUser) { try { const snapshot = await get(ref(db, `users/${currentUser.uid}/progress/${video.id}`)); if (snapshot.exists()) savedTime = Number(snapshot.val()) || 0; } catch {} } else savedTime = Number(localStorage.getItem(`progress_${video.id}`)) || 0; if (savedTime > 5 && savedTime < element.duration * 0.95) element.currentTime = savedTime; } };
   const handleDurationChange = () => { const element = videoRef.current; if (!element || !Number.isFinite(element.duration)) return; setDuration(element.duration); const formatted = formatTime(element.duration); if (video.duration !== formatted) onUpdateVideo?.({ ...video, duration: formatted }); };
-  const skip = seconds => { const element = videoRef.current; if (!element || !Number.isFinite(element.duration)) return; element.currentTime = Math.min(Math.max(0, element.currentTime + seconds), element.duration); setCurrentTime(element.currentTime); setSkipFeedback(seconds > 0 ? 'fwd' : 'bwd'); if (skipTimeoutRef.current) clearTimeout(skipTimeoutRef.current); skipTimeoutRef.current = window.setTimeout(() => setSkipFeedback(null), 600); hideControlsAfterAction(700); };
+  const skip = seconds => { const element = videoRef.current; if (!element || !Number.isFinite(element.duration)) return; element.currentTime = Math.min(Math.max(0, element.currentTime + seconds), element.duration); setCurrentTime(element.currentTime); hideControlsAfterAction(700); };
   const handleVolumeChange = event => { const value = Number(event.target.value); setVolume(value); setIsMuted(value === 0); if (value > 0) volumeBeforeMuteRef.current = value; localStorage.setItem('teraplay_volume', String(value)); if (videoRef.current) { videoRef.current.volume = value; videoRef.current.muted = value === 0; } };
   const toggleMute = () => { const element = videoRef.current; if (!isMuted) { volumeBeforeMuteRef.current = volume > 0 ? volume : 1; setIsMuted(true); if (element) element.muted = true; } else { const restored = volumeBeforeMuteRef.current || 1; setVolume(restored); setIsMuted(false); localStorage.setItem('teraplay_volume', String(restored)); if (element) { element.volume = restored; element.muted = false; } } };
   const toggleFullscreen = async () => { const container = containerRef.current; if (!container) return; try { if (!document.fullscreenElement) await container.requestFullscreen({ navigationUI: 'hide' }); else await document.exitFullscreen(); } catch { showToast('Fullscreen is not available in this browser.', 'error'); } };
@@ -196,19 +199,17 @@ export default function PlayerView({ video, relatedVideos = [], onVideoSelect, o
   const handleVideoError = () => { if (hlsRef.current) return; setIsPlaying(false); setIsInitialLoading(false); setIsBuffering(false); setVideoError('Failed to load the video stream.'); };
   const handleCopyLink = () => { const link = video.videoUrl || video.downloadUrl || video.originalUrl || window.location.href; navigator.clipboard?.writeText(link).then(() => showToast('Streaming link copied')).catch(() => showToast('Failed to copy link', 'error')); };
   const handleRelatedClick = related => { onVideoSelect?.(related); navigate(`/player/${related.id}`); };
-  const handleDoubleClick = event => { const rect = containerRef.current?.getBoundingClientRect(); if (!rect) return; skip(event.clientX - rect.left < rect.width / 2 ? -10 : 10); };
+  const handleDoubleClick = event => { if (clickTimeoutRef.current) { clearTimeout(clickTimeoutRef.current); clickTimeoutRef.current = null; } const rect = containerRef.current?.getBoundingClientRect(); if (!rect) return; skip(event.clientX - rect.left < rect.width / 2 ? -10 : 10); };
   const progressPercent = duration ? (currentTime / duration) * 100 : 0;
 
   return (
     <div className={`w-full grid grid-cols-1 lg:grid-cols-[1fr_400px] rounded-3xl border border-custom-border bg-surface shadow-glass relative ${isFullscreen ? 'fixed inset-0 z-[9999] h-screen w-screen rounded-none border-0' : 'h-auto lg:h-[calc(100vh-120px)]'}`} onMouseMove={resetControlsTimer} onTouchStart={resetControlsTimer}>
       <div className="absolute top-3 left-3 md:top-6 md:left-6 z-[60]"><button onClick={onBack} className="w-10 h-10 md:w-12 md:h-12 rounded-full bg-black/55 backdrop-blur-md grid place-items-center text-white border border-white/10 hover:bg-black/80 hover:text-accent" aria-label="Go back"><ChevronLeft size={20} /></button></div>
       <section ref={containerRef} className={`bg-black relative flex items-center justify-center overflow-hidden w-full select-none ${isFullscreen ? 'h-screen aspect-auto' : 'aspect-video lg:aspect-auto lg:h-full'}`}>
-        <video ref={videoRef} src={isHlsActive ? undefined : video.videoUrl} className="w-full h-full object-contain cursor-pointer" onClick={handlePlayPause} onDoubleClick={handleDoubleClick} onTimeUpdate={handleTimeUpdate} onLoadedMetadata={handleLoadedMetadata} onDurationChange={handleDurationChange} onEnded={() => { setIsPlaying(false); saveProgress(0, duration); if (settings.autoplay && relatedVideos.length) { const next = relatedVideos.find(item => item.id !== video.id); if (next) handleRelatedClick(next); } }} onError={handleVideoError} onWaiting={handleWaiting} onPlaying={handlePlaying} onCanPlay={handlePlaying} onLoadedData={() => setIsInitialLoading(false)} />
+        <video ref={videoRef} src={isHlsActive ? undefined : video.videoUrl} className="w-full h-full object-contain cursor-pointer" onClick={handleVideoClick} onDoubleClick={handleDoubleClick} onTimeUpdate={handleTimeUpdate} onLoadedMetadata={handleLoadedMetadata} onDurationChange={handleDurationChange} onEnded={() => { setIsPlaying(false); saveProgress(0, duration); if (settings.autoplay && relatedVideos.length) { const next = relatedVideos.find(item => item.id !== video.id); if (next) handleRelatedClick(next); } }} onError={handleVideoError} onWaiting={handleWaiting} onPlaying={handlePlaying} onCanPlay={handlePlaying} onLoadedData={() => setIsInitialLoading(false)} />
         {isInitialLoading && video.thumbnail && <div className="absolute inset-0 z-30 bg-black flex items-center justify-center"><img src={video.thumbnail || FALLBACK_THUMBNAIL} onError={event => { event.currentTarget.src = FALLBACK_THUMBNAIL; }} alt="" className="w-full h-full object-contain" /><div className="absolute inset-0 bg-black/15" /><div className="absolute w-12 h-12 border-4 border-accent border-t-transparent rounded-full animate-spin" /></div>}
         {isBuffering && <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/65 pointer-events-none"><div className="flex flex-col items-center gap-3"><div className="w-10 h-10 border-4 border-accent border-t-transparent rounded-full animate-spin" /><span className="text-xs text-white/80">{bufferingResolution ? `Buffering ${bufferingResolution}...` : 'Buffering stream...'}</span></div></div>}
         {videoError && <div className="absolute inset-0 z-40 flex flex-col items-center justify-center bg-black/90 p-6 text-center gap-4"><div className="w-12 h-12 rounded-full bg-rose-500/10 border border-rose-500/20 grid place-items-center text-rose-400"><AlertCircle size={24} /></div><div><h4 className="font-bold text-white">Stream Loading Failed</h4><p className="text-xs text-white/60 mt-1 max-w-xs">{videoError}</p></div><button onClick={retryStream} className="px-4 py-2 rounded-xl bg-white/10 border border-white/10 text-white text-xs font-semibold hover:bg-white/20">Retry Playback</button></div>}
-        {clickAction && <div className="absolute inset-0 z-10 pointer-events-none flex items-center justify-center"><div className="w-16 h-16 rounded-full bg-black/55 border border-white/10 grid place-items-center text-white">{clickAction === 'play' ? <Play fill="currentColor" size={28} /> : <Pause fill="currentColor" size={28} />}</div></div>}
-        {skipFeedback && <div className={`absolute inset-y-0 z-10 w-1/2 flex items-center justify-center pointer-events-none ${skipFeedback === 'bwd' ? 'left-0' : 'right-0'}`}><div className="w-14 h-14 rounded-full bg-white/10 border border-white/20 grid place-items-center text-white">{skipFeedback === 'bwd' ? <RotateCcw size={24} /> : <SkipForward size={24} />}</div></div>}
         {showControls && <div className="absolute bottom-0 left-0 right-0 z-50 p-2.5 sm:p-4 pb-3 sm:pb-5 bg-gradient-to-t from-black/95 via-black/60 to-transparent"><input type="range" min="0" max="100" step="0.1" value={progressPercent} onChange={event => { const value = Number(event.target.value); const time = duration * value / 100; if (videoRef.current) videoRef.current.currentTime = time; setCurrentTime(time); }} className="w-full h-1 accent-accent cursor-pointer mb-2 sm:mb-3" aria-label="Playback timeline" /><div className="flex items-center justify-between gap-2 text-white min-w-0"><div className="flex items-center gap-2 sm:gap-3 shrink-0"><button onClick={() => skip(-10)} aria-label="Rewind 10 seconds"><RotateCcw size={17} /></button><button onClick={handlePlayPause} aria-label={isPlaying ? 'Pause' : 'Play'}>{isPlaying ? <Pause fill="currentColor" size={21} /> : <Play fill="currentColor" size={21} />}</button><button onClick={() => skip(10)} aria-label="Forward 10 seconds"><SkipForward size={17} /></button><span className="text-[10px] sm:text-xs font-mono whitespace-nowrap">{formatTime(currentTime)} / {formatTime(duration)}</span></div><div className="flex items-center gap-1.5 sm:gap-3 shrink-0 min-w-0"><div className="relative flex items-center"><button onClick={() => setShowVolumeSlider(value => !value)} aria-label={isMuted ? 'Unmute' : 'Volume'} className="shrink-0">{isMuted || volume === 0 ? <VolumeX size={17} /> : <Volume2 size={17} />}</button>{showVolumeSlider && <div className="absolute bottom-8 right-0 rounded-xl bg-black/95 border border-white/10 shadow-2xl px-3 py-2.5 z-[80]"><input type="range" min="0" max="1" step="0.05" value={isMuted ? 0 : volume} onChange={handleVolumeChange} className="w-24 accent-accent" aria-label="Volume" /></div>}</div>{isHlsActive && <div className="relative"><button onClick={() => setShowQualityMenu(value => !value)} className="text-[10px] sm:text-[11px] font-mono font-semibold px-1.5 sm:px-2 py-1 rounded bg-white/10 whitespace-nowrap">{currentResolution === 'Auto' ? `Auto${activeResolution ? ` (${activeResolution})` : ''}` : currentResolution}<ChevronDown size={11} className="inline ml-1" /></button>{showQualityMenu && <div className="absolute bottom-8 right-0 w-32 sm:w-36 bg-zinc-950 border border-white/10 rounded-xl p-1 shadow-2xl">{qualities.map(item => <button key={`${item.id}-${item.name}`} onClick={() => handleQualityChange(item)} className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs text-left ${currentResolution === item.name ? 'text-accent bg-white/5' : 'text-white hover:bg-white/5'}`}><span>{item.name}</span>{currentResolution === item.name && <Check size={12} />}</button>)}</div>}</div>}<div className="relative"><button onClick={() => { const rates = [0.5, 1, 1.25, 1.5, 2]; const next = rates[(rates.indexOf(playbackRate) + 1) % rates.length]; setPlaybackRate(next); if (videoRef.current) videoRef.current.playbackRate = next; }} className="text-[10px] sm:text-xs font-mono font-semibold whitespace-nowrap">{playbackRate.toFixed(1)}x</button></div><button onClick={() => setShowShortcuts(value => !value)} className="hidden md:block" aria-label="Keyboard shortcuts"><HelpCircle size={18} /></button><button onClick={toggleFullscreen} className="shrink-0 p-1" aria-label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}>{isFullscreen ? <Minimize2 size={20} /> : <Maximize2 size={20} />}</button></div></div></div>}
         {showShortcuts && <div className="absolute inset-0 z-[70] bg-black/80 flex items-center justify-center p-6"><div className="bg-surface border border-custom-border rounded-2xl p-6 max-w-sm w-full text-fg"><div className="font-bold mb-4">Keyboard Shortcuts</div><div className="text-sm text-muted space-y-2"><div>Space — Play / Pause</div><div>← / → — Skip 10s</div><div>F — Fullscreen</div><div>M — Mute</div></div><button onClick={() => setShowShortcuts(false)} className="mt-5 px-4 py-2 rounded-lg bg-surface-elevated">Close</button></div></div>}
       </section>
