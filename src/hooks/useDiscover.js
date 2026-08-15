@@ -1,40 +1,41 @@
 import { useState, useEffect, useRef } from 'react';
 import { db } from '../firebase';
-import { ref, onValue, set } from 'firebase/database';
+import { ref, onValue } from 'firebase/database';
 import { calculateTopCreators } from '../utils/calculateTopCreators';
+
+const DEFAULT_CATEGORIES = ['Cinema', 'Lo-Fi', 'Animation', 'Nature', 'Tech', 'Tutorials'];
 
 export function useDiscover(currentUser) {
   const [discoverVideos, setDiscoverVideos] = useState([]);
   const discoverVideosRef = useRef([]);
-  const [dbCategories, setDbCategories] = useState([]);
+  const [dbCategories, setDbCategories] = useState(DEFAULT_CATEGORIES);
   const [topCreators, setTopCreators] = useState([]);
   const userVideosRef = useRef([]);
 
   useEffect(() => { discoverVideosRef.current = discoverVideos; }, [discoverVideos]);
 
   useEffect(() => {
-    if (!currentUser) { setDbCategories([]); return; }
+    if (!currentUser) { setDbCategories(DEFAULT_CATEGORIES); return; }
     const categoriesRef = ref(db, 'categories');
-    const unsubscribe = onValue(categoriesRef, snapshot => {
+    return onValue(categoriesRef, snapshot => {
       const data = snapshot.val();
-      if (data && Array.isArray(data)) setDbCategories(data);
-      else {
-        const defaults = ['Cinema', 'Lo-Fi', 'Animation', 'Nature', 'Tech', 'Tutorials'];
-        set(categoriesRef, defaults);
-        setDbCategories(defaults);
-      }
+      setDbCategories(Array.isArray(data) && data.length ? data : DEFAULT_CATEGORIES);
+    }, error => {
+      console.error('Firebase categories fetch failed:', error);
+      setDbCategories(DEFAULT_CATEGORIES);
     });
-    return unsubscribe;
   }, [currentUser]);
 
   useEffect(() => {
     if (!currentUser) { setTopCreators([]); return; }
     const topCreatorsRef = ref(db, 'topCreators');
-    const unsubscribe = onValue(topCreatorsRef, snapshot => {
+    return onValue(topCreatorsRef, snapshot => {
       const data = snapshot.val();
       setTopCreators(data ? (Array.isArray(data) ? data : Object.values(data)) : []);
+    }, error => {
+      console.error('Firebase top creators fetch failed:', error);
+      setTopCreators([]);
     });
-    return unsubscribe;
   }, [currentUser]);
 
   useEffect(() => {
@@ -51,21 +52,22 @@ export function useDiscover(currentUser) {
   }, [currentUser]);
 
   useEffect(() => {
-    if (!currentUser) { setDiscoverVideos([]); return; }
+    if (!currentUser) { setDiscoverVideos([]); setTopCreators([]); return; }
     const discoverRef = ref(db, 'discoverVideos');
     return onValue(discoverRef, snapshot => {
       const data = snapshot.val();
-      if (!data) { setDiscoverVideos([]); return; }
+      if (!data) { setDiscoverVideos([]); setTopCreators([]); return; }
       const videoList = Array.isArray(data) ? data : Object.values(data);
       const uniqueVids = videoList.filter(vid => vid && vid.id).map(vid => {
         const mine = userVideosRef.current.find(v => String(v.id) === String(vid.id));
         return { ...vid, favorite: mine?.favorite === true };
       });
       setDiscoverVideos(uniqueVids);
-      set(ref(db, 'topCreators'), calculateTopCreators(uniqueVids));
+      setTopCreators(calculateTopCreators(uniqueVids));
     }, error => {
       console.error('Firebase Discover fetch failed:', error);
       setDiscoverVideos([]);
+      setTopCreators([]);
     });
   }, [currentUser]);
 
